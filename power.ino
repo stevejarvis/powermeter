@@ -1,4 +1,6 @@
 #include <Wire.h>
+#include <bluefruit.h>
+
 #include "MPU6050.h"
 #include "HX711.h"
 
@@ -6,7 +8,7 @@
 #define DEBUG
 
 #define SAMPLES_PER_SECOND 4
-#define LED_PIN 13
+#define LED_PIN 33
 
 MPU6050 gyro;
 HX711 load;
@@ -14,7 +16,9 @@ bool led_on = false;
 
 void setup() {
   Serial.begin(115200);
-
+  while ( !Serial ) delay(10);   // for nrf52840 with native usb
+          
+  bleSetup();
   gyroSetup();
   loadSetup();
 #ifdef DEBUG
@@ -22,9 +26,7 @@ void setup() {
 #endif
 }
 
-void loop() {
-  digitalWrite(LED_PIN, led_on);
-  
+void loop() {  
 #ifdef CADENCE
   static double cadence = 0;
 #endif
@@ -49,6 +51,8 @@ void loop() {
   power = calcPower(metersPerSecond, avgForce);
 
 #ifdef DEBUG
+  // Just print these values to the serial, something easy
+  // to read, not BLE packed stuff.
 #ifdef CADENCE
   Serial.write('c');
   Serial.println(cadence);
@@ -57,10 +61,18 @@ void loop() {
   Serial.println(power);
 #endif // DEBUG
 
-  blePublishPower(power);
-
-  led_on = !led_on;
-  digitalWrite(LED_PIN, led_on);
+  if (Bluefruit.connected()) {
+    // Light up our 'connected' LED
+    digitalWrite(LED_PIN, 1);
+        
+    // Note: We use .notify instead of .write!
+    // If it is connected but CCCD is not enabled
+    // the characteristic's value is still updated although notification is not sent
+    blePublishPower(power);
+  } else {
+    // We lost central
+    digitalWrite(LED_PIN, 0);
+  }
 
   delay(1000 / SAMPLES_PER_SECOND);
 }
