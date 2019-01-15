@@ -1,10 +1,15 @@
 /**
  * This file keeps the BLE helpers, to send the data over bluetooth
  * to the bike computer. Or any other receiver, if dev/debug.
+ * 
+ * For the Adafruit BLE lib, see:
+ * https://github.com/adafruit/Adafruit_nRF52_Arduino/tree/bd0747473242d5d7c58ebc67ab0aa5098db56547/libraries/Bluefruit52Lib
  */
 
 #define DEV_NAME "JrvsPwr"
 
+// Service and character constants at:
+// https://github.com/adafruit/Adafruit_nRF52_Arduino/blob/bd0747473242d5d7c58ebc67ab0aa5098db56547/libraries/Bluefruit52Lib/src/BLEUuid.h
 /* Pwr Service Definitions
  * Cycling Power Service:      0x1818
  * Power Measurement Char:     0x2A63
@@ -15,7 +20,18 @@ BLEService        pwrService  = BLEService(UUID16_SVC_CYCLING_POWER);
 BLECharacteristic pwrMeasChar = BLECharacteristic(UUID16_CHR_CYCLING_POWER_MEASUREMENT);
 BLECharacteristic pwrFeatChar = BLECharacteristic(UUID16_CHR_CYCLING_POWER_FEATURE);
 BLECharacteristic pwrLocChar  = BLECharacteristic(UUID16_CHR_SENSOR_LOCATION);
-     
+
+/* Cadence Service Definitions
+ * Cadence and Speed Service: 0x1816
+ * CSC Measurement:           0x2A5B
+ * CSC Feature:               0x2A5C
+ * Sensor Location Char:      0x2A5D
+ */
+BLEService        cadService  = BLEService(UUID16_SVC_CYCLING_POWER);
+BLECharacteristic cscMeasChar = BLECharacteristic(UUID16_CHR_CSC_MEASUREMENT);
+BLECharacteristic cscFeatChar = BLECharacteristic(UUID16_CHR_CSC_FEATURE);
+BLECharacteristic cscLocChar  = BLECharacteristic(UUID16_CHR_SENSOR_LOCATION);
+
 BLEDis bledis;    // DIS (Device Information Service) helper class instance
 BLEBas blebas;    // BAS (Battery Service) helper class instance
 
@@ -40,6 +56,8 @@ void bleSetup() {
   // Setup the Heart Rate Monitor service using
   // BLEService and BLECharacteristic classes
   setupPwr();
+  // Also set up the cadence
+  setupCad();
      
   // Setup the advertising packet(s)
   startAdv();
@@ -54,6 +72,7 @@ void startAdv(void) {
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   Bluefruit.Advertising.addTxPower();
   Bluefruit.Advertising.addService(pwrService);
+  Bluefruit.Advertising.addService(cadService);
   Bluefruit.Advertising.addName();
       
   /* Start Advertising
@@ -70,9 +89,11 @@ void startAdv(void) {
   Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
   Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds  
 }
-     
-void setupPwr(void)
-{
+
+/*
+ * Set up the power service
+ */
+void setupPwr(void) {
   // Configure supported characteristics:
   pwrService.begin();
      
@@ -120,8 +141,60 @@ void setupPwr(void)
   pwrLocChar.write8(5);
 }
 
-void blePublishPower(double instantPwr) {
-  static int bps = 0;
+/**
+ * Set up the cadence service.
+ */
+void setupCad(void) {     
+  // Note: You must call .begin() on the BLEService before calling .begin() on
+  // any characteristic(s) within that service definition.. Calling .begin() on
+  // a BLECharacteristic will cause it to be added to the last BLEService that
+  // was 'begin()'ed!
+
+  cadService.begin();
+
+  // Has to have notify enabled. 
+  // Cadence and measurement. This is the characteristic that really matters. See:
+  // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.csc_measurement.xml
+  cscMeasChar.setProperties(CHR_PROPS_NOTIFY);
+  // First param is the read permission, second is write.
+  cscMeasChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  // 8 bits of flags, 2 16-bit ints for crank revolutions and last event time
+  cscMeasChar.setFixedLen(5);
+  // Optionally capture Client Characteristic Config Descriptor updates
+  cscMeasChar.setCccdWriteCallback(cccdCallback);
+  cscMeasChar.begin();
+
+  /*
+   * The other two characterstics aren't updated over time, they're static info
+   * relaying what's available in our service and characteristics.
+   */
+  
+  // Characteristic for cadence feature. Has to be readable, but not necessarily
+  // notify. 16 bit value of what's supported, see
+  // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.csc_feature.xml
+  cscFeatChar.setProperties(CHR_PROPS_READ);
+  cscFeatChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  // 1 16-bit value
+  cscFeatChar.setFixedLen(2);
+  cscFeatChar.begin();
+  // Bit 1 is for crank rev data, that's all we have. Characteristic data is LSO, so if I'm doing this
+  // right, bit 1 is actually bit 10 below, in what's transmitted.
+  cscFeatChar.write16(0b0000001000000000);
+
+  // Characteristic for sensor location. Has to be readable, but not necessarily
+  // notify. This is actually the same characteristic as for power; same ID and everything.
+  cscLocChar.setProperties(CHR_PROPS_READ);
+  cscLocChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  cscLocChar.setFixedLen(1);
+  cscLocChar.begin();
+  // Set location to "left crank"
+  cscLocChar.write8(5);
+}
+
+/*
+ * Publish the instantaneous power measurement.
+ */
+void blePublishPower(uint16_t instantPwr) {
   // Power measure characteristic
   /**
    * Fields
@@ -143,18 +216,68 @@ void blePublishPower(double instantPwr) {
    *   b13 reserved
    *   
    * Instananous Power:
-   *   16bits signed int
+   *   16 bits signed int
    */
   // We're using none of the additional, optional flags so far.
-  // Per the Arduino docs, a short on all architectures in 16 bit.
-  uint16_t pwrdata[2] = { 0b0000000000000000, short(instantPwr) };
+  uint16_t flag = 0b0000000000000000;
+  
+  // All data in characteristics goes least-significant octet first.
+  // Split them up into 8-bit ints. LSO ends up first in array.
+  uint8_t flags[2];
+  uint16ToLso(flag, flags);
+  uint8_t pwr[2]; 
+  uint16ToLso(instantPwr, pwr);
+  
+  // Both fields are 16-bit values, split into two 8-bit values.
+  uint8_t pwrdata[4] = { flags[0], flags[1], pwr[0], pwr[1] };
 
   if (pwrMeasChar.notify(pwrdata, sizeof(pwrdata))) {
 #ifdef DEBUG
     Serial.print("Power measurement updated to: "); 
-    Serial.println(short(instantPwr)); 
+    Serial.println(instantPwr); 
   } else {
-    Serial.println("ERROR: Notify not set in the CCCD or not connected!");
+    Serial.println("ERROR: Power notify not set in the CCCD or not connected!");
+#endif
+  }
+}
+
+/*
+ * Update the cadence characteristic. Publish BLE.
+ * Provide the total crank revolutions, that's what the spec requires,
+ * not actually the instantaneous RPMs.
+ */
+void blePublishCadence(uint16_t crankRevs, long millisSinceLast) {
+  // Power measure characteristic
+  /**
+   * Fields
+   * 
+   * Flags (8 bits):
+   *   b0 wheeldouble revolution data present
+   *   b1 crank (cadence) revolution data present
+   *   b2-6 reserved
+   *   
+   * Cumulative Crank Revolutions:
+   *   16 bits signed int
+   *   
+   * Last Crank Event Time
+   *   16 bits signed int
+   */
+  // last event time is time since last event, in 1/1024 second resolution
+  uint16_t lastEventTime = uint16_t(millisSinceLast) / 1000 * 1024;
+  // Split the 16-bit ints into 8 bits, LSO is first in array.
+  uint8_t cranks[2];
+  uint16ToLso(crankRevs, cranks);
+  uint8_t lastTime[2];
+  uint16ToLso(lastEventTime, lastTime);
+  
+  uint8_t caddata[5] = { 0b00000010, cranks[0], cranks[1], lastTime[0], lastTime[1] };
+
+  if (cscMeasChar.notify(caddata, sizeof(caddata))) {
+#ifdef DEBUG
+    Serial.print("Crank revolusions measurement updated to: "); 
+    Serial.println(crankRevs); 
+  } else {
+    Serial.println("ERROR: Cadence notify not set in the CCCD or not connected!");
 #endif
   }
 }
@@ -162,7 +285,10 @@ void blePublishPower(double instantPwr) {
 void connectCallback(uint16_t connHandle) {
   char centralName[32] = { 0 };
   Bluefruit.Gap.getPeerName(connHandle, centralName, sizeof(centralName));
-
+  
+  // Light up our 'connected' LED
+  digitalWrite(LED_PIN, 1);
+    
 #ifdef DEBUG
   Serial.print("Connected to ");
   Serial.println(centralName);
@@ -178,7 +304,9 @@ void connectCallback(uint16_t connHandle) {
 void disconnectCallback(uint16_t connHandle, uint8_t reason) {
   (void) connHandle;
   (void) reason; 
-  
+
+  digitalWrite(LED_PIN, 0);
+
 #ifdef DEBUG
       Serial.println("Disconnected");
       Serial.println("Advertising!");
@@ -202,4 +330,17 @@ void cccdCallback(BLECharacteristic& chr, uint16_t cccdValue) {
     }
   }
 #endif
+}
+
+/*
+ * Given a 16-bit uint16_t, convert it to 2 8-bit ints, and set
+ * them in the provided array. Assume the array is of correct
+ * size, allocated by caller. Least-significant octet is place
+ * in output array first.
+ */
+void uint16ToLso(uint16_t val, uint8_t* out) {
+  uint8_t lso = val & 0xff;
+  uint8_t mso = (val >> 8) & 0xff;
+  out[0] = lso;
+  out[1] = mso;
 }
