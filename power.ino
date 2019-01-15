@@ -93,5 +93,6 @@ void loop() {
  * Returns the power, in watts. Force and distance over time.
  */
 double calcPower(double footSpeed, double force) {
-  return (force * footSpeed);
+  // Multiply it all by 2, because we only have the sensor on 1/2 the cranks.
+  return (2 * force * footSpeed);
 }
