@@ -27,7 +27,7 @@ BLECharacteristic pwrLocChar  = BLECharacteristic(UUID16_CHR_SENSOR_LOCATION);
  * CSC Feature:               0x2A5C
  * Sensor Location Char:      0x2A5D
  */
-BLEService        cadService  = BLEService(UUID16_SVC_CYCLING_POWER);
+BLEService        cadService  = BLEService(UUID16_SVC_CYCLING_SPEED_AND_CADENCE);
 BLECharacteristic cscMeasChar = BLECharacteristic(UUID16_CHR_CSC_MEASUREMENT);
 BLECharacteristic cscFeatChar = BLECharacteristic(UUID16_CHR_CSC_FEATURE);
 BLECharacteristic cscLocChar  = BLECharacteristic(UUID16_CHR_SENSOR_LOCATION);
@@ -70,6 +70,8 @@ void bleSetup() {
 void startAdv(void) {
   // Advertising packet
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+  // Set max power. Accepted values are: -40, -30, -20, -16, -12, -8, -4, 0, 4
+  Bluefruit.setTxPower(-12);
   Bluefruit.Advertising.addTxPower();
   Bluefruit.Advertising.addService(pwrService);
   Bluefruit.Advertising.addService(cadService);
