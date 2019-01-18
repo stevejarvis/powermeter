@@ -16,7 +16,7 @@
 #define HX711_MULT 2280.f
 
 // Call tare to average this many readings to get going.
-#define NUM_TARE_CALLS 50
+#define NUM_TARE_CALLS 10
 // How many raw readings to take each sample.
 #define NUM_RAW_SAMPLES 7
 
@@ -47,7 +47,7 @@ void showConfigs(void) {
   Serial.print(" * Load multiplier:   ");
   Serial.println(load.get_scale());
 
-  Serial.print("Power meter calibrated.");
+  Serial.println("Power meter calibrated.");
 }
 
 /**

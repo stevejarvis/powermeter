@@ -4,7 +4,7 @@
 #include "MPU6050.h"
 #include "HX711.h"
 
-#define DEBUG
+//#define DEBUG
 
 #define SAMPLES_PER_SECOND 2
 #define LED_PIN 33
@@ -16,10 +16,10 @@ bool led_on = false;
 
 void setup() {
   Serial.begin(115200);
-          
   bleSetup();
   gyroSetup();
   loadSetup();
+  
 #ifdef DEBUG
   Serial.println("All setup complete.");
 #endif

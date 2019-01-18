@@ -24,11 +24,7 @@ void gyroSetup() {
     delay(500);
   }
   // Calibrate gyroscope. The calibration must be at rest.
-  gyro.calibrateGyro();
-  // Set threshold sensivty. This is a multiple of the raw reading that must be 
-  // exceeded to be considered non-zero. 3 is just what was used in examples by
-  // the library author, I have no other reason to consider it a good default...
-  gyro.setThreshold(3);
+  gyro.calibrateGyro(2);
 
 #ifdef DEBUG
   checkSettings();
