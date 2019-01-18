@@ -95,7 +95,10 @@ double getNormalAvgVelocity(double lastAvg) {
 
   // Return a rolling average, including the last reading.
   // e.g. if weight is 0.90, it's 10% what it used to be, 90% this new reading.
-  return (newData * WEIGHT) + (lastAvg * (1 - WEIGHT));
+  double newavg = (newData * WEIGHT) + (lastAvg * (1 - WEIGHT));
+
+  // Return the absolute value. Cause who knows if the chip is just backwards.
+  return abs(newavg);
 }
 
 /**
