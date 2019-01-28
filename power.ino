@@ -4,7 +4,7 @@
 #include "MPU6050.h"
 #include "HX711.h"
 
-//#define DEBUG
+#define DEBUG
 
 #define SAMPLES_PER_SECOND 2
 #define LED_PIN 33
@@ -15,6 +15,7 @@ HX711 load;
 bool led_on = false;
 
 void setup() {
+  Wire.begin();
   Serial.begin(115200);
   bleSetup();
   gyroSetup();
@@ -27,10 +28,10 @@ void setup() {
 
 void loop() {  
   // Vars for tracking cadence
-  static double normalAvgVelocity = 0;
-  static double metersPerSecond = 0;
-  static double cadence = 0;
-  static short totalCrankRevs = 0;
+  static int16_t normalAvgVelocity = 0;
+  static float metersPerSecond = 0;
+  static int16_t cadence = 0;
+  static double totalCrankRevs = 0;
   static long lastCadUpdate = millis();
   // Vars for force
   static double avgForce = 0;
@@ -43,7 +44,7 @@ void loop() {
   // Not necessary for power, but a good sanity check calculation 
   // to do development and get going and easy added value.
   cadence = getCadence(normalAvgVelocity);
-  
+
   // Now get force from the load cell
   avgForce = getAvgForce(avgForce);
 
@@ -53,10 +54,10 @@ void loop() {
 #ifdef DEBUG
   // Just print these values to the serial, something easy
   // to read, not BLE packed stuff.
-  Serial.write('c');
-  Serial.println(cadence);
-  Serial.write('p');
-  Serial.println(power);
+  Serial.print("Force is:     "); Serial.println(avgForce);
+  Serial.print("Footspeed is: "); Serial.println(metersPerSecond);
+  Serial.print("Cadence:      "); Serial.println(cadence);
+  Serial.write("Power:        "); Serial.println(power);
 #endif // DEBUG
 
   if (Bluefruit.connected()) {      
@@ -91,7 +92,7 @@ void loop() {
  *
  * Returns the power, in watts. Force and distance over time.
  */
-double calcPower(double footSpeed, double force) {
+int16_t calcPower(double footSpeed, double force) {
   // Multiply it all by 2, because we only have the sensor on 1/2 the cranks.
   return (2 * force * footSpeed);
 }

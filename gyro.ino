@@ -1,9 +1,13 @@
 /**
  * MPU6050/gyroscope specific code. Initialize, helpers to do angular math.
+ * 
+ * TODO big improvements I think to use the sleep mode and interrupts provided 
+ * by this MPU.
  */
  
 // Crank length, in meters
-#define CRANK_RADIUS 0.175
+#define CRANK_RADIUS 0.1725
+#define CALIBRATION_SAMPLES 40
 
 /** 
  *  Calibrate and initialize the gyroscope
@@ -11,61 +15,58 @@
 void gyroSetup() {  
   // "gyro" is defined in main, Arduino implicitly smashes these files together
   // to compile, so it's in scope.
-  //
-  // 2000DPS is a max speed of 2000 degrees per second (5.5 RPS or 333 RPM).
-  // The next step down for scale is 1000, or 167 RPM. Actually achievable/exceedable 
-  // doing speed work, but very rarely, and presumably at some power savings.
-  // The range is multiples of gravity for the accelerometer, and while 2g is fairly
-  // low, we don't need that measurement anyway. We just need gyro for foot speed.
-  while(!gyro.begin(MPU6050_SCALE_1000DPS, MPU6050_RANGE_2G)){
-#ifdef DEBUG
-    Serial.println("Could not find the MPU6050 sensor, check wiring!");
-#endif
-    delay(500);
-  }
-  // Calibrate gyroscope. The calibration must be at rest.
-  gyro.calibrateGyro(2);
+  
+  gyro.initialize();
 
 #ifdef DEBUG
-  checkSettings();
+  // verify connection
+  Serial.println(F("Testing device connections..."));
+  Serial.println(gyro.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
+
+  // Calibrate the gyro
+  gyro.setZGyroOffset(0);
+  Serial.print("Starting gyroscope offset: "); Serial.println(gyro.getZGyroOffset());
+#endif 
+  float sumZ = 0;
+  int16_t maxSample = -32768;
+  int16_t minSample = 32767;
+  // Read n-samples
+  for (uint8_t i = 0; i < CALIBRATION_SAMPLES; ++i) {
+    delay(5);
+    int16_t reading = gyro.getRotationZ();
+    if (reading > maxSample) maxSample = reading;
+    if (reading < minSample) minSample = reading;
+    sumZ += reading;
+  }
+
+  // Throw out the two outliers
+  sumZ -= minSample;
+  sumZ -= maxSample;
+
+  // Two fewer than the calibration samples because we took out two outliers.
+  float deltaZ = sumZ / (CALIBRATION_SAMPLES - 2);
+#ifdef DEBUG
+  Serial.print("Discounting max and min samples: "); Serial.print(maxSample); Serial.print(" "); Serial.println(minSample);
+  Serial.print("Gyro calculated offset: "); Serial.println(deltaZ);
+#endif
+  // Set that calibration
+  gyro.setZGyroOffset(-1 * deltaZ);
+  
+#ifdef DEBUG
+  dumpSettings();
 #endif
 }
 
 /**
  * This doesn't do anything but echo applied setting on the MPU.
  */
-void checkSettings() {
+void dumpSettings() {
   Serial.println();
-  Serial.print(" * Sleep Mode:        ");
+  Serial.print(" * Gyroscope Sleep Mode: ");
   Serial.println(gyro.getSleepEnabled() ? "Enabled" : "Disabled");
   
-  Serial.print(" * Clock Source:      ");
-  switch(gyro.getClockSource()){
-    case MPU6050_CLOCK_KEEP_RESET:     Serial.println("Stops the clock and keeps the timing generator in reset"); break;
-    case MPU6050_CLOCK_EXTERNAL_19MHZ: Serial.println("PLL with external 19.2MHz reference"); break;
-    case MPU6050_CLOCK_EXTERNAL_32KHZ: Serial.println("PLL with external 32.768kHz reference"); break;
-    case MPU6050_CLOCK_PLL_ZGYRO:      Serial.println("PLL with Z axis gyroscope reference"); break;
-    case MPU6050_CLOCK_PLL_YGYRO:      Serial.println("PLL with Y axis gyroscope reference"); break;
-    case MPU6050_CLOCK_PLL_XGYRO:      Serial.println("PLL with X axis gyroscope reference"); break;
-    case MPU6050_CLOCK_INTERNAL_8MHZ:  Serial.println("Internal 8MHz oscillator"); break;
-  }
-  
-  Serial.print(" * Gyroscope:         ");
-  switch(gyro.getScale()){
-    case MPU6050_SCALE_2000DPS:        Serial.println("2000 degrees/s"); break;
-    case MPU6050_SCALE_1000DPS:        Serial.println("1000 degrees/s"); break;
-    case MPU6050_SCALE_500DPS:         Serial.println("500 degrees/s"); break;
-    case MPU6050_SCALE_250DPS:         Serial.println("250 degrees/s"); break;
-  } 
-  
-  Serial.print(" * Gyroscope offsets: ");
-  Serial.print(gyro.getGyroOffsetX());
-  Serial.print(" / ");
-  Serial.print(gyro.getGyroOffsetY());
-  Serial.print(" / ");
-  Serial.println(gyro.getGyroOffsetZ());
-
-  Serial.println("Gyroscope setup complete.");
+  Serial.print(" * Gyroscope offset:     ");
+  Serial.println(gyro.getZGyroOffset());
 }
 
 /**
@@ -78,20 +79,18 @@ void checkSettings() {
  * 
  * Returns a value for foot speed, in degrees/second.
  */
-double getNormalAvgVelocity(double lastAvg) {  
+int16_t getNormalAvgVelocity(int16_t lastAvg) {  
   const static double WEIGHT = 0.90;
-  double newData = 0;
+  // At +/- 250 degrees/s, the LSB/deg/s is 131. Per the mpu6050 spec.
+  const static int16_t SENSITIVITY = 131;
 
-  // Request new data from the MPU
-  Vector normGyro = gyro.readNormalizeGyro();
-
-  // The axis we're interested in depends on which way we end up packing this thing
-  // into a case on the crankarm. Right now it's sideways, so 'z'.
-  newData = normGyro.ZAxis;
-
+  // Request new data from the MPU. The orientation obviously dictates
+  // which x/y/z value we're interested in, but right now Z.
+  int16_t rotz = gyro.getRotationZ() / SENSITIVITY;
+  
   // Return a rolling average, including the last reading.
   // e.g. if weight is 0.90, it's 10% what it used to be, 90% this new reading.
-  double newavg = (newData * WEIGHT) + (lastAvg * (1 - WEIGHT));
+  int16_t newavg = (rotz * WEIGHT) + (lastAvg * (1 - WEIGHT));
 
   // Return the absolute value. Cause who knows if the chip is just backwards.
   return abs(newavg);
@@ -106,7 +105,7 @@ double getNormalAvgVelocity(double lastAvg) {
  * 
  * Value returned is in meters/second
  */
-double getCircularVelocity(double normAvgRotate) {
+float getCircularVelocity(int16_t normAvgRotate) {
   // 2 * PI * radians = 360 degrees  -- by definition
   // normAvgRotate degrees/second * (PI / 180) rad/degree = rad/second
   // (rad/sec) / (rad/circumference) = (rad/sec) / 2 * PI = ratio of a circumference traveled, still per second
@@ -127,9 +126,9 @@ double getCircularVelocity(double normAvgRotate) {
  *  Note this isn't necessary for power measurement, but it's a gimme addon 
  *  given what we already have and useful for the athlete.
  *  
- *  Returns an double of cadence, rotations/minute.
+ *  Returns an int16 of cadence, rotations/minute.
  */
-double getCadence(double normAvgRotate) {
+int16_t getCadence(int16_t normAvgRotate) {
   // Cadence is the normalized angular velocity, times 60/360, which 
   // converts from deg/s to rotations/min. x * (60/360) = x / 6.
   return normAvgRotate / 6;

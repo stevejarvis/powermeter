@@ -17,7 +17,7 @@
 // Call tare to average this many readings to get going.
 #define NUM_TARE_CALLS 10
 // How many raw readings to take each sample.
-#define NUM_RAW_SAMPLES 7
+#define NUM_RAW_SAMPLES 2
 
 // Pins we're using.
 #define EXCIT_POS A0
@@ -32,6 +32,8 @@ void loadSetup() {
   // that will be used throughout. Make sure no weight on the
   // pedal at startup, obviously.
   load.tare(NUM_TARE_CALLS);
+
+  load.power_up();
 
 #ifdef DEBUG
   showConfigs();
@@ -54,14 +56,14 @@ void showConfigs(void) {
  * rolling average, in Newtons.
  */
 double getAvgForce(double lastAvg) {
-  const static double WEIGHT = 0.90;
+  const static double WEIGHT = 0.75;
   static double currentData = 0;
 
   // Power the load cell up and down each run, hopefully saving power
   // but I'm not really sure.
-  load.power_up();
+  //load.power_up();
   currentData = load.get_units(NUM_RAW_SAMPLES);
-  load.power_down();
+  //load.power_down();
 
   // Return a rolling average, including the last avg readings.
   // e.g. if weight is 0.90, it's 10% what it used to be, 90% this new reading.
