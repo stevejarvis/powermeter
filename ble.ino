@@ -196,7 +196,7 @@ void setupCad(void) {
 /*
  * Publish the instantaneous power measurement.
  */
-void blePublishPower(uint16_t instantPwr) {
+void blePublishPower(int16_t instantPwr) {
   // Power measure characteristic
   /**
    * Fields

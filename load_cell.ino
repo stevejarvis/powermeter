@@ -8,19 +8,18 @@
 
 // It's 'm' as in:
 // 'y = m*x + b' 
-// where 'y' is kilograms (our desired answer, technically a 
-// force because it's a measure of weight, not mass, here), 'x' is 
-// the raw reading of the load cell, and 'b' is the tare offset. So
-// this multiplier is the scale needed to translate raw readings to
-// units of kilograms.
-#define HX711_MULT 2280.f
+// where 'y' is Newtons (our desired answer, kilograms at  
+// acceleration of gravity), 'x' is the raw reading of the load 
+// cell, and 'b' is the tare offset. So this multiplier is the 
+// scale needed to translate raw readings to units of Newtons.
+#define HX711_MULT 2337.541
 
 // Call tare to average this many readings to get going.
 #define NUM_TARE_CALLS 10
 // How many raw readings to take each sample.
 #define NUM_RAW_SAMPLES 7
 
-// Beetle pins we're using.
+// Pins we're using.
 #define EXCIT_POS A0
 #define EXCIT_NEG A1
 
@@ -52,7 +51,7 @@ void showConfigs(void) {
 
 /**
  * Get the current force from the load cell. Returns an exponentially
- * rolling average, in kilograms.
+ * rolling average, in Newtons.
  */
 double getAvgForce(double lastAvg) {
   const static double WEIGHT = 0.90;

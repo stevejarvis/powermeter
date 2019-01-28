@@ -63,7 +63,7 @@ void loop() {
     // Note: We use .notify instead of .write!
     // If it is connected but CCCD is not enabled
     // the characteristic's value is still updated although notification is not sent
-    blePublishPower(short(power));
+    blePublishPower(int16_t(power));
     // For resolution and rounding errors, we need to make the cadence update less
     // regularly. Like every few seconds, because it's just total crank revs and 
     // published as an int.
