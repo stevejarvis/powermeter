@@ -1,10 +1,12 @@
 /**
  * This file keeps the BLE helpers, to send the data over bluetooth
  * to the bike computer. Or any other receiver, if dev/debug.
- * 
+ *
  * For the Adafruit BLE lib, see:
  * https://github.com/adafruit/Adafruit_nRF52_Arduino/tree/bd0747473242d5d7c58ebc67ab0aa5098db56547/libraries/Bluefruit52Lib
  */
+
+#include <stdarg.h>
 
 #define DEV_NAME "JrvsPwr"
 
@@ -32,33 +34,43 @@ BLECharacteristic cscMeasChar = BLECharacteristic(UUID16_CHR_CSC_MEASUREMENT);
 BLECharacteristic cscFeatChar = BLECharacteristic(UUID16_CHR_CSC_FEATURE);
 BLECharacteristic cscLocChar  = BLECharacteristic(UUID16_CHR_SENSOR_LOCATION);
 
+/*
+ * A made up service to help development.
+ */
+BLEService        logService = BLEService(0xface);
+BLECharacteristic logChar    = BLECharacteristic(0x1234);
+
 BLEDis bledis;    // DIS (Device Information Service) helper class instance
 BLEBas blebas;    // BAS (Battery Service) helper class instance
 
 void bleSetup() {
   Bluefruit.begin();
   Bluefruit.setName(DEV_NAME);
-  
+
   // Set the connect/disconnect callback handlers
   Bluefruit.setConnectCallback(connectCallback);
   Bluefruit.setDisconnectCallback(disconnectCallback);
-     
+
   // Configure and Start the Device Information Service
   bledis.setManufacturer("Adafruit Industries");
   bledis.setModel("Bluefruit Feather52");
   bledis.begin();
-     
+
   // Start the BLE Battery Service
   blebas.begin();
   // NOTE TODO right now this is never updated, it'll always read this value
   blebas.write(90);
-     
+
   // Setup the Heart Rate Monitor service using
   // BLEService and BLECharacteristic classes
   setupPwr();
   // Also set up the cadence
   setupCad();
-     
+
+#ifdef BLE_LOGGING
+  setupBleLogger();
+#endif
+
   // Setup the advertising packet(s)
   startAdv();
 
@@ -75,21 +87,24 @@ void startAdv(void) {
   Bluefruit.Advertising.addTxPower();
   Bluefruit.Advertising.addService(pwrService);
   Bluefruit.Advertising.addService(cadService);
+#ifdef BLE_LOGGING
+  Bluefruit.Advertising.addService(logService);
+#endif
   Bluefruit.Advertising.addName();
-      
+
   /* Start Advertising
    * - Enable auto advertising if disconnected
    * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
    * - Timeout for fast mode is 30 seconds
    * - Start(timeout) with timeout = 0 will advertise forever (until connected)
-   * 
+   *
    * For recommended advertising interval
-   * https://developer.apple.com/library/content/qa/qa1931/_index.html   
+   * https://developer.apple.com/library/content/qa/qa1931/_index.html
    */
   Bluefruit.Advertising.restartOnDisconnect(true);
   Bluefruit.Advertising.setInterval(32, 244);    // in unit of 0.625 ms
   Bluefruit.Advertising.setFastTimeout(30);      // number of seconds in fast mode
-  Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds  
+  Bluefruit.Advertising.start(0);                // 0 = Don't stop advertising after n seconds
 }
 
 /*
@@ -98,13 +113,13 @@ void startAdv(void) {
 void setupPwr(void) {
   // Configure supported characteristics:
   pwrService.begin();
-     
+
   // Note: You must call .begin() on the BLEService before calling .begin() on
   // any characteristic(s) within that service definition.. Calling .begin() on
   // a BLECharacteristic will cause it to be added to the last BLEService that
   // was 'begin()'ed!
 
-  // Has to have notify enabled. 
+  // Has to have notify enabled.
   // Power measurement. This is the characteristic that really matters. See:
   // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.cycling_power_measurement.xml
   pwrMeasChar.setProperties(CHR_PROPS_NOTIFY);
@@ -120,7 +135,7 @@ void setupPwr(void) {
    * The other two characterstics aren't updated over time, they're static info
    * relaying what's available in our service and characteristics.
    */
-  
+
   // Characteristic for power feature. Has to be readable, but not necessarily
   // notify. 32 bit value of what's supported, see
   // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.cycling_power_feature.xml
@@ -146,7 +161,7 @@ void setupPwr(void) {
 /**
  * Set up the cadence service.
  */
-void setupCad(void) {     
+void setupCad(void) {
   // Note: You must call .begin() on the BLEService before calling .begin() on
   // any characteristic(s) within that service definition.. Calling .begin() on
   // a BLECharacteristic will cause it to be added to the last BLEService that
@@ -154,7 +169,7 @@ void setupCad(void) {
 
   cadService.begin();
 
-  // Has to have notify enabled. 
+  // Has to have notify enabled.
   // Cadence and measurement. This is the characteristic that really matters. See:
   // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.csc_measurement.xml
   cscMeasChar.setProperties(CHR_PROPS_NOTIFY);
@@ -170,7 +185,7 @@ void setupCad(void) {
    * The other two characterstics aren't updated over time, they're static info
    * relaying what's available in our service and characteristics.
    */
-  
+
   // Characteristic for cadence feature. Has to be readable, but not necessarily
   // notify. 16 bit value of what's supported, see
   // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.csc_feature.xml
@@ -194,13 +209,30 @@ void setupCad(void) {
 }
 
 /*
+ * This service exists only to publish logs over BLE.
+ */
+#ifdef BLE_LOGGING
+void setupBleLogger() {
+  logService.begin();
+
+  // Has nothing to do with any spec.
+  logChar.setProperties(CHR_PROPS_NOTIFY);
+  // First param is the read permission, second is write.
+  logChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  // Payload is quite limited in BLE, so come up with good logging shorthand.
+  logChar.setMaxLen(20);
+  logChar.begin();
+}
+#endif
+
+/*
  * Publish the instantaneous power measurement.
  */
 void blePublishPower(int16_t instantPwr) {
   // Power measure characteristic
   /**
    * Fields
-   * 
+   *
    * Flags (16 bits):
    *   b0 pedal power balance present
    *   b1 pedal power balance reference
@@ -216,27 +248,27 @@ void blePublishPower(int16_t instantPwr) {
    *   b11 accumulated energy present
    *   b12 offset compenstation indicator
    *   b13 reserved
-   *   
+   *
    * Instananous Power:
    *   16 bits signed int
    */
   // We're using none of the additional, optional flags so far.
   uint16_t flag = 0b0000000000000000;
-  
+
   // All data in characteristics goes least-significant octet first.
   // Split them up into 8-bit ints. LSO ends up first in array.
   uint8_t flags[2];
   uint16ToLso(flag, flags);
-  uint8_t pwr[2]; 
+  uint8_t pwr[2];
   uint16ToLso(instantPwr, pwr);
-  
+
   // Both fields are 16-bit values, split into two 8-bit values.
   uint8_t pwrdata[4] = { flags[0], flags[1], pwr[0], pwr[1] };
 
   if (pwrMeasChar.notify(pwrdata, sizeof(pwrdata))) {
 #ifdef DEBUG
-    Serial.print("Power measurement updated to: "); 
-    Serial.println(instantPwr); 
+    Serial.print("Power measurement updated to: ");
+    Serial.println(instantPwr);
   } else {
     Serial.println("ERROR: Power notify not set in the CCCD or not connected!");
 #endif
@@ -252,15 +284,15 @@ void blePublishCadence(uint16_t crankRevs, long millisSinceLast) {
   // Power measure characteristic
   /**
    * Fields
-   * 
+   *
    * Flags (8 bits):
    *   b0 wheeldouble revolution data present
    *   b1 crank (cadence) revolution data present
    *   b2-6 reserved
-   *   
+   *
    * Cumulative Crank Revolutions:
    *   16 bits signed int
-   *   
+   *
    * Last Crank Event Time
    *   16 bits signed int
    */
@@ -271,26 +303,56 @@ void blePublishCadence(uint16_t crankRevs, long millisSinceLast) {
   uint16ToLso(crankRevs, cranks);
   uint8_t lastTime[2];
   uint16ToLso(lastEventTime, lastTime);
-  
+
   uint8_t caddata[5] = { 0b00000010, cranks[0], cranks[1], lastTime[0], lastTime[1] };
 
   if (cscMeasChar.notify(caddata, sizeof(caddata))) {
 #ifdef DEBUG
-    Serial.print("Crank revolusions measurement updated to: "); 
-    Serial.println(crankRevs); 
+    Serial.print("Crank revolusions measurement updated to: ");
+    Serial.println(crankRevs);
   } else {
     Serial.println("ERROR: Cadence notify not set in the CCCD or not connected!");
-#endif
+#endif // DEBUG
   }
 }
+
+/*
+ * Publish a tiny little log message over BLE. Pass a null-terminated
+ * char*, in 20 chars or less (counting the null).
+ */
+#ifdef BLE_LOGGING
+void blePublishLog(const char* fmt, ...) {
+  static const short MAX = 20;  // 19 chars plus the null terminator
+  static char msg[MAX];
+
+  va_list args;
+  va_start(args, fmt);
+  int numBytes = vsprintf(msg, fmt, args);
+  va_end(args);
+
+  if (numBytes < 0) {
+    Serial.println("Failed to write BLE log to buffer");
+  } else if (numBytes > MAX) {
+    Serial.printf("Too many bytes written (%d), overflowed the msg buffer.\n", numBytes);
+    Serial.printf("Original message: %s\n", msg);
+  } else {
+    bool ret = logChar.notify(msg, numBytes);
+    if (ret) {
+      Serial.printf("Sent log %d byte message: %s\n", ret, msg);
+    } else {
+      Serial.println("Failed to publish log message over BLE.");
+    }
+  }
+}
+#endif
 
 void connectCallback(uint16_t connHandle) {
   char centralName[32] = { 0 };
   Bluefruit.Gap.getPeerName(connHandle, centralName, sizeof(centralName));
-  
+
   // Light up our 'connected' LED
   digitalWrite(LED_PIN, 1);
-    
+
 #ifdef DEBUG
   Serial.print("Connected to ");
   Serial.println(centralName);
@@ -305,7 +367,7 @@ void connectCallback(uint16_t connHandle) {
  */
 void disconnectCallback(uint16_t connHandle, uint8_t reason) {
   (void) connHandle;
-  (void) reason; 
+  (void) reason;
 
   digitalWrite(LED_PIN, 0);
 
@@ -314,14 +376,12 @@ void disconnectCallback(uint16_t connHandle, uint8_t reason) {
       Serial.println("Advertising!");
 #endif
 }
-     
+
 void cccdCallback(BLECharacteristic& chr, uint16_t cccdValue) {
-#ifdef DEBUG  
+#ifdef DEBUG
   // Display the raw request packet
-  Serial.print("CCCD Updated: ");
-  //Serial.printBuffer(request->data, request->len);
-  Serial.println(cccdValue);
-     
+    Serial.printf("CCCD Updated: %d\n", cccdValue);
+
   // Check the characteristic this CCCD update is associated with in case
   // this handler is used for multiple CCCD records.
   if (chr.uuid == pwrMeasChar.uuid) {

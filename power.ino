@@ -5,10 +5,16 @@
 #include "HX711.h"
 
 #define DEBUG
+#define BLE_LOGGING
 
-#define SAMPLES_PER_SECOND 2
+// How many times per second to poll key sensors
+#define SAMPLES_PER_SECOND 8
+// How often to crunch numbers and publish an update
+#define UPDATE_FREQ 1000
+// NOTE LED is automatically lit solid when connected,
+// we don't currently change it, default Feather behavior
+// is nice.
 #define LED_PIN 33
-#define CAD_UPDATE_MILLIS 2000
 
 MPU6050 gyro;
 HX711 load;
@@ -17,74 +23,109 @@ bool led_on = false;
 void setup() {
   Wire.begin();
   Serial.begin(115200);
-  bleSetup();
+
+  // Setup, calibrate our other components
   gyroSetup();
   loadSetup();
-  
+  bleSetup();
+
 #ifdef DEBUG
-  Serial.println("All setup complete.");
+  // The F Macro stores strings in flash (program space) instead of RAM
+  Serial.println(F("All setup complete."));
 #endif
 }
 
-void loop() {  
-  // Vars for tracking cadence
-  static int16_t normalAvgVelocity = 0;
-  static float metersPerSecond = 0;
-  static int16_t cadence = 0;
+void loop() {
+  // Vars for polling footspeed
+  static float dps = 0.f;
+  static float avgDps = 0.f;
+  // Cadence is calculated by increasing total revolutions.
   static double totalCrankRevs = 0;
-  static long lastCadUpdate = millis();
   // Vars for force
-  static double avgForce = 0;
-  // And together, is power
-  static double power = 0;
+  static double force = 0.f;
+  static double avgForce = 0.f;
+  // We only publish every UPDATE_FREQ
+  static long lastUpdate = millis();
+  // To find the average values to use, count the num of samples
+  // between updates.
+  static int16_t numPolls = 0;
 
-  // Get the average velocity from the gyroscope, in m/s.
-  normalAvgVelocity = getNormalAvgVelocity(normalAvgVelocity);
-  metersPerSecond = getCircularVelocity(normalAvgVelocity);
-  // Not necessary for power, but a good sanity check calculation 
-  // to do development and get going and easy added value.
-  cadence = getCadence(normalAvgVelocity);
+  // During every loop, we just want to get samples to calculate
+  // one power/cadence update every UPDATE_FREQ milliseconds.
+
+  // Degrees per second
+  dps = getNormalAvgVelocity(dps);
+  avgDps += dps;
 
   // Now get force from the load cell
-  avgForce = getAvgForce(avgForce);
+  force = getAvgForce(force);
+  avgForce += force;
 
-  // That's all the ingredients, now we can find the power.
-  power = calcPower(metersPerSecond, avgForce);
+  numPolls += 1;
+
+#ifdef BLE_LOGGING
+  blePublishLog("F%.1f|%.1f %d p", force, numPolls);
+#endif
 
 #ifdef DEBUG
-  // Just print these values to the serial, something easy
-  // to read, not BLE packed stuff.
-  Serial.print("Force is:     "); Serial.println(avgForce);
-  Serial.print("Footspeed is: "); Serial.println(metersPerSecond);
-  Serial.print("Cadence:      "); Serial.println(cadence);
-  Serial.write("Power:        "); Serial.println(power);
-#endif // DEBUG
+  // Just print these values to the serial, something easy to read.
+  Serial.print(F("Force: ")); Serial.println(force);
+  Serial.print(F("DPS:   ")); Serial.println(dps);
+#endif  // DEBUG
 
-  if (Bluefruit.connected()) {      
-    // Note: We use .notify instead of .write!
-    // If it is connected but CCCD is not enabled
-    // the characteristic's value is still updated although notification is not sent
-    blePublishPower(int16_t(power));
-    // For resolution and rounding errors, we need to make the cadence update less
-    // regularly. Like every few seconds, because it's just total crank revs and 
-    // published as an int.
-    long timeSinceLastUpdate = millis() - lastCadUpdate;
-    if (timeSinceLastUpdate > CAD_UPDATE_MILLIS) {
-      // Time for an update. The time since last update, as published, is actually at
+  if (Bluefruit.connected()) {
+    // We have a central connected
+    long timeSinceLastUpdate = millis() - lastUpdate;
+    if (timeSinceLastUpdate > UPDATE_FREQ) {
+      // Find the actual averages over the polling period.
+      avgDps = avgDps / numPolls;
+      avgForce = avgForce / numPolls;
+
+      // Convert dps to mps
+      float mps = getCircularVelocity(avgDps);
+
+      // That's all the ingredients, now we can find the power.
+      int16_t power = calcPower(mps, avgForce);
+
+      blePublishPower(power);
+      totalCrankRevs += (avgDps / 360) * (timeSinceLastUpdate / 1000);
+      // The time since last update, as published, is actually at
       // a resolution of 1/1024 seconds, per the spec. BLE will convert, just send
       // how long it's been, in millis.
-      // As for totalCrankRevs, a calculation closer to the "source" would be 
-      // preferable, as we've already done quite a bit of math on cadence. Some of
-      // that math has been a rolling average. For simplicity right now, assume
-      // the current cadence has been constant for the duration.
-      totalCrankRevs += (cadence / 60) * (timeSinceLastUpdate / 1000);
       blePublishCadence(totalCrankRevs, timeSinceLastUpdate);
+
+#ifdef BLE_LOGGING
+      // Not necessary for power, but a good sanity check calculation
+      // to do development and get going and easy added value.
+      // It's not even useful for sending cadence to the computer, ironically.
+      int16_t cadence = getCadence(avgDps);
+      // Log chars over BLE, for some insight when not wired to a
+      // laptop. Need to keep total ASCII to 20 chars or less.
+      blePublishLog("%.1f %.1f|%d=%d", avgForce, mps, cadence, power);
+      blePublishLog("%d: %d polls", millis() / 1000, numPolls);
+#endif
+
       // Reset the latest update to now.
-      lastCadUpdate = millis();
+      lastUpdate = millis();
+      // Let the averages from this polling period just carry over.
+      numPolls = 1;
     }
   }
 
   delay(1000 / SAMPLES_PER_SECOND);
+}
+
+/**
+ * Figure out how long to sleep in the loops. We'd like to tie the update interval
+ * to the cadence, but if they stop pedaling need some minimum.
+ *
+ * Return sleep time, in milliseconds.
+ */
+float sleepTime(float dps) {
+  // Try to sample four times per revolution. Seems like a good idea to start.
+  // So knowing the dps, how long for 90 degrees?
+  float del = min(1000 / SAMPLES_PER_SECOND, 1000 * (90 / dps));
+  return del;
 }
 
 /**

@@ -3,21 +3,23 @@
  */
 #include "HX711.h"
 
-// This offset value is obtained by calibrating the scale with known 
-// weights, currently manually with a separate sketch. 
+// This offset value is obtained by calibrating the scale with known
+// weights, currently manually with a separate sketch.
 
 // It's 'm' as in:
-// 'y = m*x + b' 
-// where 'y' is Newtons (our desired answer, kilograms at  
-// acceleration of gravity), 'x' is the raw reading of the load 
-// cell, and 'b' is the tare offset. So this multiplier is the 
+// 'y = m*x + b'
+// where 'y' is Newtons (our desired answer, kilograms at
+// acceleration of gravity), 'x' is the raw reading of the load
+// cell, and 'b' is the tare offset. So this multiplier is the
 // scale needed to translate raw readings to units of Newtons.
 #define HX711_MULT 2337.541
 
 // Call tare to average this many readings to get going.
-#define NUM_TARE_CALLS 10
+// NOTE: 30 takes kind of long, like > 1 second, but it definitely
+// dials in better >20 in testing.
+#define NUM_TARE_CALLS 30
 // How many raw readings to take each sample.
-#define NUM_RAW_SAMPLES 2
+#define NUM_RAW_SAMPLES 1
 
 // Pins we're using.
 #define EXCIT_POS A0
@@ -42,12 +44,8 @@ void loadSetup() {
 
 void showConfigs(void) {
   Serial.println();
-  Serial.print(" * Load offset:       ");
-  Serial.println(load.get_offset());
-  
-  Serial.print(" * Load multiplier:   ");
-  Serial.println(load.get_scale());
-
+  Serial.printf(" * Load offset:       %d\n", load.get_offset());
+  Serial.printf(" * Load multiplier:   %d\n", load.get_scale());
   Serial.println("Power meter calibrated.");
 }
 
@@ -55,15 +53,11 @@ void showConfigs(void) {
  * Get the current force from the load cell. Returns an exponentially
  * rolling average, in Newtons.
  */
-double getAvgForce(double lastAvg) {
-  const static double WEIGHT = 0.75;
+double getAvgForce(const double & lastAvg) {
+  const static double WEIGHT = 0.90;
   static double currentData = 0;
 
-  // Power the load cell up and down each run, hopefully saving power
-  // but I'm not really sure.
-  //load.power_up();
   currentData = load.get_units(NUM_RAW_SAMPLES);
-  //load.power_down();
 
   // Return a rolling average, including the last avg readings.
   // e.g. if weight is 0.90, it's 10% what it used to be, 90% this new reading.
