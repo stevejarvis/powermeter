@@ -5,11 +5,11 @@
 #include "HX711.h"
 
 #define DEBUG
-#define BLE_LOGGING
+//#define BLE_LOGGING
 
 // How many times per second to poll key sensors
 #define SAMPLES_PER_SECOND 8
-// How often to crunch numbers and publish an update
+// How often to crunch numbers and publish an update (millis)
 #define UPDATE_FREQ 1000
 // NOTE LED is automatically lit solid when connected,
 // we don't currently change it, default Feather behavior
@@ -18,7 +18,6 @@
 
 MPU6050 gyro;
 HX711 load;
-bool led_on = false;
 
 void setup() {
   Wire.begin();
@@ -36,6 +35,11 @@ void setup() {
 }
 
 void loop() {
+  // These aren't actually the range of a double, but
+  // they should easily bookend force readings.
+  static const float MIN_DOUBLE = -100000.f;
+  static const float MAX_DOUBLE = 100000.f;
+  
   // Vars for polling footspeed
   static float dps = 0.f;
   static float avgDps = 0.f;
@@ -44,6 +48,9 @@ void loop() {
   // Vars for force
   static double force = 0.f;
   static double avgForce = 0.f;
+  // Track the max and min force per update, and exclude them.
+  static double maxForce = MIN_DOUBLE;
+  static double minForce = MAX_DOUBLE;
   // We only publish every UPDATE_FREQ
   static long lastUpdate = millis();
   // To find the average values to use, count the num of samples
@@ -57,8 +64,15 @@ void loop() {
   dps = getNormalAvgVelocity(dps);
   avgDps += dps;
 
-  // Now get force from the load cell
+  // Now get force from the load cell.
   force = getAvgForce(force);
+  // We wanna throw out the max and min.
+  if (force > maxForce) {
+    maxForce = force;
+  } 
+  if (force < minForce) {
+    minForce = force;
+  }
   avgForce += force;
 
   numPolls += 1;
@@ -76,10 +90,13 @@ void loop() {
   if (Bluefruit.connected()) {
     // We have a central connected
     long timeSinceLastUpdate = millis() - lastUpdate;
-    if (timeSinceLastUpdate > UPDATE_FREQ) {
+    // Must ensure there are more than 2 polls, because we're tossing the high and low.
+    if (timeSinceLastUpdate > UPDATE_FREQ && numPolls > 2) {
       // Find the actual averages over the polling period.
       avgDps = avgDps / numPolls;
-      avgForce = avgForce / numPolls;
+      // Subtract 2 from the numPolls because we're removing the high and low.
+      avgForce = avgForce - minForce - maxForce;
+      avgForce = avgForce / (numPolls - 2);
 
       // Convert dps to mps
       float mps = getCircularVelocity(avgDps);
@@ -109,6 +126,8 @@ void loop() {
       lastUpdate = millis();
       // Let the averages from this polling period just carry over.
       numPolls = 1;
+      maxForce = MIN_DOUBLE;
+      minForce = MAX_DOUBLE;
     }
   }
 
