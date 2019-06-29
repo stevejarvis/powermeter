@@ -45,7 +45,7 @@ void loop() {
   static float dps = 0.f;
   static float avgDps = 0.f;
   // Cadence is calculated by increasing total revolutions.
-  static double totalCrankRevs = 0;
+  static uint16_t totalCrankRevs = 0;
   // Vars for force
   static double force = 0.f;
   static double avgForce = 0.f;
@@ -90,12 +90,14 @@ void loop() {
 
   if (Bluefruit.connected()) {
     // We have a central connected
-    long timeSinceLastUpdate = millis() - lastUpdate;
+    long timeNow = millis();
+    long timeSinceLastUpdate = timeNow - lastUpdate;
     // Must ensure there are more than 2 polls, because we're tossing the high and low.
     if (timeSinceLastUpdate > updateTime(dps) && numPolls > 2) {
       // Find the actual averages over the polling period.
       avgDps = avgDps / numPolls;
-      // Subtract 2 from the numPolls because we're removing the high and low.
+      // Subtract 2 from the numPolls for force because we're removing the high and
+      // low here.
       avgForce = avgForce - minForce - maxForce;
       avgForce = avgForce / (numPolls - 2);
 
@@ -110,12 +112,13 @@ void loop() {
   Serial.print(F("Pwr: ")); Serial.println(power);
 #endif  // DEBUG
 
-      blePublishPower(power);
-      totalCrankRevs += (avgDps / 360) * (timeSinceLastUpdate / 1000);
+      // Now cadence. 
+      // TODO it's possible this rolls over, about 12 hours at 90RPM for 16 bit unsigned.
+      totalCrankRevs += (avgDps / 360.f) * (timeSinceLastUpdate / 1000.f);
       // The time since last update, as published, is actually at
       // a resolution of 1/1024 seconds, per the spec. BLE will convert, just send
-      // how long it's been, in millis.
-      blePublishCadence(totalCrankRevs, timeSinceLastUpdate);
+      // the time, in millis.
+      blePublishPower(power, totalCrankRevs, timeNow);
 
 #ifdef BLE_LOGGING
       // Not necessary for power, but a good sanity check calculation
@@ -148,7 +151,7 @@ void loop() {
  */
 float updateTime(float dps) {
   // So knowing the dps, how long for 360 degrees?
-  float del = min(UPDATE_FREQ, 1000 * (360 / dps));
+  float del = min(UPDATE_FREQ, 1000.f * (360.f / dps));
   return del;
 }
 

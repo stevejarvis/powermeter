@@ -23,17 +23,6 @@ BLECharacteristic pwrMeasChar = BLECharacteristic(UUID16_CHR_CYCLING_POWER_MEASU
 BLECharacteristic pwrFeatChar = BLECharacteristic(UUID16_CHR_CYCLING_POWER_FEATURE);
 BLECharacteristic pwrLocChar  = BLECharacteristic(UUID16_CHR_SENSOR_LOCATION);
 
-/* Cadence Service Definitions
- * Cadence and Speed Service: 0x1816
- * CSC Measurement:           0x2A5B
- * CSC Feature:               0x2A5C
- * Sensor Location Char:      0x2A5D
- */
-BLEService        cadService  = BLEService(UUID16_SVC_CYCLING_SPEED_AND_CADENCE);
-BLECharacteristic cscMeasChar = BLECharacteristic(UUID16_CHR_CSC_MEASUREMENT);
-BLECharacteristic cscFeatChar = BLECharacteristic(UUID16_CHR_CSC_FEATURE);
-BLECharacteristic cscLocChar  = BLECharacteristic(UUID16_CHR_SENSOR_LOCATION);
-
 /*
  * A made up service to help development.
  */
@@ -64,8 +53,6 @@ void bleSetup() {
   // Setup the Heart Rate Monitor service using
   // BLEService and BLECharacteristic classes
   setupPwr();
-  // Also set up the cadence
-  setupCad();
 
 #ifdef BLE_LOGGING
   setupBleLogger();
@@ -86,7 +73,6 @@ void startAdv(void) {
   Bluefruit.setTxPower(-12);
   Bluefruit.Advertising.addTxPower();
   Bluefruit.Advertising.addService(pwrService);
-  Bluefruit.Advertising.addService(cadService);
 #ifdef BLE_LOGGING
   Bluefruit.Advertising.addService(logService);
 #endif
@@ -158,56 +144,6 @@ void setupPwr(void) {
   pwrLocChar.write8(5);
 }
 
-/**
- * Set up the cadence service.
- */
-void setupCad(void) {
-  // Note: You must call .begin() on the BLEService before calling .begin() on
-  // any characteristic(s) within that service definition.. Calling .begin() on
-  // a BLECharacteristic will cause it to be added to the last BLEService that
-  // was 'begin()'ed!
-
-  cadService.begin();
-
-  // Has to have notify enabled.
-  // Cadence and measurement. This is the characteristic that really matters. See:
-  // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.csc_measurement.xml
-  cscMeasChar.setProperties(CHR_PROPS_NOTIFY);
-  // First param is the read permission, second is write.
-  cscMeasChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-  // 8 bits of flags, 2 16-bit ints for crank revolutions and last event time
-  cscMeasChar.setFixedLen(5);
-  // Optionally capture Client Characteristic Config Descriptor updates
-  cscMeasChar.setCccdWriteCallback(cccdCallback);
-  cscMeasChar.begin();
-
-  /*
-   * The other two characterstics aren't updated over time, they're static info
-   * relaying what's available in our service and characteristics.
-   */
-
-  // Characteristic for cadence feature. Has to be readable, but not necessarily
-  // notify. 16 bit value of what's supported, see
-  // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.csc_feature.xml
-  cscFeatChar.setProperties(CHR_PROPS_READ);
-  cscFeatChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-  // 1 16-bit value
-  cscFeatChar.setFixedLen(2);
-  cscFeatChar.begin();
-  // Bit 1 is for crank rev data, that's all we have. Characteristic data is LSO, so if I'm doing this
-  // right, bit 1 is actually bit 10 below, in what's transmitted.
-  cscFeatChar.write16(0b0000001000000000);
-
-  // Characteristic for sensor location. Has to be readable, but not necessarily
-  // notify. This is actually the same characteristic as for power; same ID and everything.
-  cscLocChar.setProperties(CHR_PROPS_READ);
-  cscLocChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-  cscLocChar.setFixedLen(1);
-  cscLocChar.begin();
-  // Set location to "left crank"
-  cscLocChar.write8(5);
-}
-
 /*
  * This service exists only to publish logs over BLE.
  */
@@ -228,7 +164,7 @@ void setupBleLogger() {
 /*
  * Publish the instantaneous power measurement.
  */
-void blePublishPower(int16_t instantPwr) {
+void blePublishPower(int16_t instantPwr, uint16_t crankRevs, long millisLast) {
   // Power measure characteristic
   /**
    * Fields
@@ -251,9 +187,16 @@ void blePublishPower(int16_t instantPwr) {
    *
    * Instananous Power:
    *   16 bits signed int
+   *   
+   * Cumulative Crank Revolutions:
+   *   16 bits signed int
+   *
+   * Last Crank Event Time
+   *   16 bits signed int
    */
-  // We're using none of the additional, optional flags so far.
-  uint16_t flag = 0b0000000000000000;
+  // Flag cadence.
+  uint16_t flag = 0b0000000000100000;
+  //uint16_t flag = 0b0000000000000000;
 
   // All data in characteristics goes least-significant octet first.
   // Split them up into 8-bit ints. LSO ends up first in array.
@@ -262,8 +205,17 @@ void blePublishPower(int16_t instantPwr) {
   uint8_t pwr[2];
   uint16ToLso(instantPwr, pwr);
 
-  // Both fields are 16-bit values, split into two 8-bit values.
-  uint8_t pwrdata[4] = { flags[0], flags[1], pwr[0], pwr[1] };
+  // Cadnce last event time is time of last event, in 1/1024 second resolution
+  uint16_t lastEventTime = uint16_t(millisLast / 1000.f * 1024.f);
+  // Split the 16-bit ints into 8 bits, LSO is first in array.
+  uint8_t cranks[2];
+  uint16ToLso(crankRevs, cranks);
+  uint8_t lastTime[2];
+  uint16ToLso(lastEventTime, lastTime);
+
+  // All fields are 16-bit values, split into two 8-bit values.
+  uint8_t pwrdata[8] = { flags[0], flags[1], pwr[0], pwr[1], cranks[0], cranks[1], lastTime[0], lastTime[1] };
+  //uint8_t pwrdata[4] = { flags[0], flags[1], pwr[0], pwr[1] };
 
   if (pwrMeasChar.notify(pwrdata, sizeof(pwrdata))) {
 #ifdef DEBUG
@@ -272,47 +224,6 @@ void blePublishPower(int16_t instantPwr) {
   } else {
     Serial.println("ERROR: Power notify not set in the CCCD or not connected!");
 #endif
-  }
-}
-
-/*
- * Update the cadence characteristic. Publish BLE.
- * Provide the total crank revolutions, that's what the spec requires,
- * not actually the instantaneous RPMs.
- */
-void blePublishCadence(uint16_t crankRevs, long millisSinceLast) {
-  // Power measure characteristic
-  /**
-   * Fields
-   *
-   * Flags (8 bits):
-   *   b0 wheeldouble revolution data present
-   *   b1 crank (cadence) revolution data present
-   *   b2-6 reserved
-   *
-   * Cumulative Crank Revolutions:
-   *   16 bits signed int
-   *
-   * Last Crank Event Time
-   *   16 bits signed int
-   */
-  // last event time is time since last event, in 1/1024 second resolution
-  uint16_t lastEventTime = uint16_t(millisSinceLast / 1000.f * 1024.f);
-  // Split the 16-bit ints into 8 bits, LSO is first in array.
-  uint8_t cranks[2];
-  uint16ToLso(crankRevs, cranks);
-  uint8_t lastTime[2];
-  uint16ToLso(lastEventTime, lastTime);
-
-  uint8_t caddata[5] = { 0b00000010, cranks[0], cranks[1], lastTime[0], lastTime[1] };
-
-  if (cscMeasChar.notify(caddata, sizeof(caddata))) {
-#ifdef DEBUG
-    Serial.print("Crank revolusions measurement updated to: ");
-    Serial.println(crankRevs);
-  } else {
-    Serial.println("ERROR: Cadence notify not set in the CCCD or not connected!");
-#endif // DEBUG
   }
 }
 
