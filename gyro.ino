@@ -9,6 +9,8 @@
 #define CRANK_RADIUS 0.1725
 #define CALIBRATION_SAMPLES 40
 
+#define GYRO_INT_PIN A4
+
 /**
  *  Calibrate and initialize the gyroscope
  */
@@ -24,11 +26,13 @@ void gyroSetup() {
   // verify connection
   Serial.println(F("Testing device connections..."));
   Serial.println(gyro.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
+#endif // DEBUG
 
+// TODO make a calibration mode. For now, test manually.
+// 5 tests sitting at the kitchen table, offsets were   -39 -39 -39 -38 -38
+#ifdef CALIBRATE
   // Calibrate the gyro
   gyro.setZGyroOffset(0);
-  Serial.printf("Starting gyroscope offset: %d\n", gyro.getZGyroOffset());
-#endif
   float sumZ = 0;
   int16_t maxSample = -32768;
   int16_t minSample = 32767;
@@ -49,14 +53,38 @@ void gyroSetup() {
   float deltaZ = sumZ / (CALIBRATION_SAMPLES - 2);
 #ifdef DEBUG
   Serial.printf("Discounting max (%d) and min (%d) samples.\n", maxSample, minSample);
-  Serial.printf("Gyro calculated offset: %d\n", deltaZ);
-#endif
+  Serial.printf("Gyro calculated offset: %f\n", deltaZ); 
+#endif // DEBUG
+#endif // CALIBRATE
+
+  // In lieu of being able to store results from a calibration mode...
+  float deltaZ = -39;
   // Set that calibration
   gyro.setZGyroOffset(-1 * deltaZ);
+
+  // Set zero motion detection
+  gyro.setIntZeroMotionEnabled(true);
+  gyro.setZeroMotionDetectionThreshold(4);
+  // 1 LSB = 64ms. So 30s = 
+  gyro.setZeroMotionDetectionDuration(80);
+  gyro.setInterruptLatchClear(true);
+
+  pinMode(GYRO_INT_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(GYRO_INT_PIN), motionDetectChange, RISING);
 
 #ifdef DEBUG
   dumpSettings();
 #endif
+}
+
+void motionDetectChange() {
+  uint8_t motion = gyro.getMotionStatus();
+  // TODO note really clear what our power options actually are here..
+  if (motion) {
+    Serial.println("Go to sleep..");
+  } else {
+    Serial.println("Wakey wakey let's get crankey.");
+  }
 }
 
 /**
@@ -94,6 +122,11 @@ float getNormalAvgVelocity(const float & lastAvg) {
   // which x/y/z value we're interested in, but right now Z.
   // Use the absolute value. Cause who knows if the chip is just backwards.
   float rotz = abs(gyro.getRotationZ() / SENSITIVITY);
+  if (rotz < 90) {
+    // Magic number here, but less than 90 dps is less than 1 crank rotation 
+    // in 4 seconds (15 RPM), just assume it's noise from the road bumps.
+    rotz = 0.f;
+  }
   // Return a rolling average, including the last reading.
   // e.g. if weight is 0.90, it's 10% what it used to be, 90% this new reading.
   float newavg = (rotz * WEIGHT) + (lastAvg * (1 - WEIGHT));

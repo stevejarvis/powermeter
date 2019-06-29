@@ -33,8 +33,18 @@ void loadSetup() {
   // Lots of calls to get load on startup, this is the offset
   // that will be used throughout. Make sure no weight on the
   // pedal at startup, obviously.
-  load.tare(NUM_TARE_CALLS);
 
+// TODO get a calibration mode.
+#ifdef CALIBRATE
+  load.tare(NUM_TARE_CALLS); 
+#endif // CALIBRATE
+
+  // In lieu of a calibration mode and way to save it, manually 
+  // tested 5 times at the kitchen table.
+  // 244045 244097 243450 243318 243325
+  float offset = 243647;
+  load.set_offset(offset);
+  
   load.power_up();
 
 #ifdef DEBUG

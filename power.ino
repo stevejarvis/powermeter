@@ -4,11 +4,11 @@
 #include "MPU6050.h"
 #include "HX711.h"
 
-#define DEBUG
+//#define DEBUG
 //#define BLE_LOGGING
 
 // How many times per second to poll key sensors
-#define SAMPLES_PER_SECOND 8
+#define SAMPLES_PER_SECOND 20
 // How often to crunch numbers and publish an update (millis)
 #define UPDATE_FREQ 1000
 // NOTE LED is automatically lit solid when connected,
@@ -18,6 +18,7 @@
 
 MPU6050 gyro;
 HX711 load;
+
 
 void setup() {
   Wire.begin();
@@ -91,7 +92,7 @@ void loop() {
     // We have a central connected
     long timeSinceLastUpdate = millis() - lastUpdate;
     // Must ensure there are more than 2 polls, because we're tossing the high and low.
-    if (timeSinceLastUpdate > UPDATE_FREQ && numPolls > 2) {
+    if (timeSinceLastUpdate > updateTime(dps) && numPolls > 2) {
       // Find the actual averages over the polling period.
       avgDps = avgDps / numPolls;
       // Subtract 2 from the numPolls because we're removing the high and low.
@@ -103,6 +104,11 @@ void loop() {
 
       // That's all the ingredients, now we can find the power.
       int16_t power = calcPower(mps, avgForce);
+
+#ifdef DEBUG
+  // Just print these values to the serial, something easy to read.
+  Serial.print(F("Pwr: ")); Serial.println(power);
+#endif  // DEBUG
 
       blePublishPower(power);
       totalCrankRevs += (avgDps / 360) * (timeSinceLastUpdate / 1000);
@@ -138,12 +144,11 @@ void loop() {
  * Figure out how long to sleep in the loops. We'd like to tie the update interval
  * to the cadence, but if they stop pedaling need some minimum.
  *
- * Return sleep time, in milliseconds.
+ * Return update interval, in milliseconds.
  */
-float sleepTime(float dps) {
-  // Try to sample four times per revolution. Seems like a good idea to start.
-  // So knowing the dps, how long for 90 degrees?
-  float del = min(1000 / SAMPLES_PER_SECOND, 1000 * (90 / dps));
+float updateTime(float dps) {
+  // So knowing the dps, how long for 360 degrees?
+  float del = min(UPDATE_FREQ, 1000 * (360 / dps));
   return del;
 }
 
