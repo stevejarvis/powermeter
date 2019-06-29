@@ -297,7 +297,7 @@ void blePublishCadence(uint16_t crankRevs, long millisSinceLast) {
    *   16 bits signed int
    */
   // last event time is time since last event, in 1/1024 second resolution
-  uint16_t lastEventTime = uint16_t(millisSinceLast) / 1000 * 1024;
+  uint16_t lastEventTime = uint16_t(millisSinceLast / 1000.f * 1024.f);
   // Split the 16-bit ints into 8 bits, LSO is first in array.
   uint8_t cranks[2];
   uint16ToLso(crankRevs, cranks);
