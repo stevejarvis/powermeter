@@ -5,8 +5,6 @@
  * by this MPU.
  */
 
-// Crank length, in meters
-#define CRANK_RADIUS 0.1725
 #define CALIBRATION_SAMPLES 40
 
 #define GYRO_INT_PIN A4
@@ -58,7 +56,10 @@ void gyroSetup() {
 #endif // CALIBRATE
 
   // In lieu of being able to store results from a calibration mode...
-  float deltaZ = -39;
+#ifndef CALIBRATE
+  float deltaZ = 39;
+#endif // CALIBRATE
+
   // Set that calibration
   gyro.setZGyroOffset(-1 * deltaZ);
 

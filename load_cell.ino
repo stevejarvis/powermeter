@@ -12,7 +12,7 @@
 // acceleration of gravity), 'x' is the raw reading of the load
 // cell, and 'b' is the tare offset. So this multiplier is the
 // scale needed to translate raw readings to units of Newtons.
-#define HX711_MULT 2337.541
+#define HX711_MULT 22075.0551876
 
 // Call tare to average this many readings to get going.
 // NOTE: 30 takes kind of long, like > 1 second, but it definitely
@@ -39,11 +39,12 @@ void loadSetup() {
   load.tare(NUM_TARE_CALLS); 
 #endif // CALIBRATE
 
-  // In lieu of a calibration mode and way to save it, manually 
-  // tested 5 times at the kitchen table.
-  // 244045 244097 243450 243318 243325
-  float offset = 243647;
+#ifndef CALIBRATE
+  // In lieu of a calibration mode and way to save it, manually.
+  // This zeros, or tares.
+  float offset = 449490;
   load.set_offset(offset);
+#endif // CALIBRATE
   
   load.power_up();
 
@@ -52,12 +53,14 @@ void loadSetup() {
 #endif
 }
 
+#ifdef DEBUG
 void showConfigs(void) {
   Serial.println();
   Serial.printf(" * Load offset:       %d\n", load.get_offset());
   Serial.printf(" * Load multiplier:   %d\n", load.get_scale());
   Serial.println("Power meter calibrated.");
 }
+#endif // DEBUG
 
 /**
  * Get the current force from the load cell. Returns an exponentially
@@ -67,7 +70,7 @@ double getAvgForce(const double & lastAvg) {
   const static double WEIGHT = 0.90;
   static double currentData = 0;
 
-  currentData = load.get_units(NUM_RAW_SAMPLES);
+  currentData = load.get_units(NUM_RAW_SAMPLES) * HOOKEDUPLOADBACKWARDS;
 
   // Return a rolling average, including the last avg readings.
   // e.g. if weight is 0.90, it's 10% what it used to be, 90% this new reading.
