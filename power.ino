@@ -97,7 +97,7 @@ void loop() {
   numPolls += 1;
 
 #ifdef BLE_LOGGING
-  blePublishLog("F%.1f|%.1f %d p", force, numPolls);
+  blePublishLog("F%.1f|%.1f %d", force, dps, numPolls);
 #endif
 
 #ifdef DEBUG
@@ -147,7 +147,7 @@ void loop() {
       int16_t cadence = getCadence(avgDps);
       // Log chars over BLE, for some insight when not wired to a
       // laptop. Need to keep total ASCII to 20 chars or less.
-      blePublishLog("%.1f %.1f|%d=%d", avgForce, mps, cadence, power);
+      blePublishLog("B%.1f %.1f %d", avgForce, mps, power);
       blePublishLog("%d: %d polls", millis() / 1000, numPolls);
 #endif
 

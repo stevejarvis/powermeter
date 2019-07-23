@@ -194,9 +194,9 @@ void blePublishPower(int16_t instantPwr, uint16_t crankRevs, long millisLast) {
    * Last Crank Event Time
    *   16 bits signed int
    */
-  // Flag cadence.
-  //uint16_t flag = 0b0000000000100000;
-  uint16_t flag = 0b0000000000000000;
+  // Flag cadence. Put most-significant octet first, it'll flip later.
+  uint16_t flag = 0b0010000000000000;
+  //uint16_t flag = 0b0000000000000000;
 
   // All data in characteristics goes least-significant octet first.
   // Split them up into 8-bit ints. LSO ends up first in array.
@@ -206,7 +206,7 @@ void blePublishPower(int16_t instantPwr, uint16_t crankRevs, long millisLast) {
   uint16ToLso(instantPwr, pwr);
 
   // Cadnce last event time is time of last event, in 1/1024 second resolution
-  uint16_t lastEventTime = uint16_t(millisLast / 1000.f * 1024.f);
+  uint16_t lastEventTime = uint16_t(millisLast / 1000.f * 1024.f) % 65536;
   // Split the 16-bit ints into 8 bits, LSO is first in array.
   uint8_t cranks[2];
   uint16ToLso(crankRevs, cranks);
@@ -214,8 +214,8 @@ void blePublishPower(int16_t instantPwr, uint16_t crankRevs, long millisLast) {
   uint16ToLso(lastEventTime, lastTime);
 
   // All fields are 16-bit values, split into two 8-bit values.
-  //uint8_t pwrdata[8] = { flags[0], flags[1], pwr[0], pwr[1], cranks[0], cranks[1], lastTime[0], lastTime[1] };
-  uint8_t pwrdata[4] = { flags[0], flags[1], pwr[0], pwr[1] };
+  uint8_t pwrdata[8] = { flags[0], flags[1], pwr[0], pwr[1], cranks[0], cranks[1], lastTime[0], lastTime[1] };
+  //uint8_t pwrdata[4] = { flags[0], flags[1], pwr[0], pwr[1] };
 
   if (pwrMeasChar.notify(pwrdata, sizeof(pwrdata))) {
 #ifdef DEBUG

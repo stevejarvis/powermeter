@@ -12,12 +12,12 @@
 // acceleration of gravity), 'x' is the raw reading of the load
 // cell, and 'b' is the tare offset. So this multiplier is the
 // scale needed to translate raw readings to units of Newtons.
-#define HX711_MULT 22075.0551876
+#define HX711_MULT  2650.411
 
 // Call tare to average this many readings to get going.
 // NOTE: 30 takes kind of long, like > 1 second, but it definitely
 // dials in better >20 in testing.
-#define NUM_TARE_CALLS 30
+#define NUM_TARE_CALLS 50
 // How many raw readings to take each sample.
 #define NUM_RAW_SAMPLES 1
 
@@ -42,7 +42,7 @@ void loadSetup() {
 #ifndef CALIBRATE
   // In lieu of a calibration mode and way to save it, manually.
   // This zeros, or tares.
-  float offset = 449490;
+  float offset = 599855;
   load.set_offset(offset);
 #endif // CALIBRATE
   
@@ -57,7 +57,7 @@ void loadSetup() {
 void showConfigs(void) {
   Serial.println();
   Serial.printf(" * Load offset:       %d\n", load.get_offset());
-  Serial.printf(" * Load multiplier:   %d\n", load.get_scale());
+  Serial.printf(" * Load multiplier:   %.3f\n", load.get_scale());
   Serial.println("Power meter calibrated.");
 }
 #endif // DEBUG

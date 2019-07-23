@@ -57,7 +57,7 @@ void gyroSetup() {
 
   // In lieu of being able to store results from a calibration mode...
 #ifndef CALIBRATE
-  float deltaZ = 39;
+  float deltaZ = 29;
 #endif // CALIBRATE
 
   // Set that calibration
