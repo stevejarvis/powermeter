@@ -57,39 +57,41 @@ if __name__ == '__main__':
     cadence = []
     powers = []
 
-    with open(fname, 'r') as f:
-        force_line = re.compile('([0-9]+\.[0-9])\s[0-9]+\.[0-9]\|([0-9]+)=(-?[0-9]+)')
-        time_line = re.compile('([0-9]+):\s([0-9]+)')
-        poll_line = re.compile('^F')
-        for line in f.readlines():
-            if 'notified' in line:
-                # Then we know this is an update, but for what characteristic.
-                if '(1234)' in line:
-                    # BLE logger
-                    msg = format(bytearray.fromhex(get_val(line)).decode())
-                    force_match = force_line.search(msg)
-                    time_match = time_line.search(msg)
-                    poll_match = poll_line.search(msg)
-                    if force_match:
-                        forces.append(float(force_match.group(1)))
-                        cadence.append(int(force_match.group(2)))
-                        powers.append(int(force_match.group(3)))
-                    elif time_match:
-                        seconds.append(int(time_match.group(1)))
-                    elif poll_match:
+    with open('{}.txt'.format(fname), 'w') as fw:
+        with open(fname, 'r') as f:
+            force_line = re.compile('([0-9]+\.[0-9])\s[0-9]+\.[0-9]\|([0-9]+)=(-?[0-9]+)')
+            time_line = re.compile('([0-9]+):\s([0-9]+)')
+            poll_line = re.compile('^F')
+            for line in f.readlines():
+                if 'notified' in line:
+                    # Then we know this is an update, but for what characteristic.
+                    if '(1234)' in line:
+                        # BLE logger
+                        msg = format(bytearray.fromhex(get_val(line)).decode())
+                        force_match = force_line.search(msg)
+                        time_match = time_line.search(msg)
+                        poll_match = poll_line.search(msg)
+                        if force_match:
+                            forces.append(float(force_match.group(1)))
+                            cadence.append(int(force_match.group(2)))
+                            powers.append(int(force_match.group(3)))
+                            fw.write("Force: {}, Cadence: {}, Power: {}".format(forces[-1], cadence[-1], powers[-1]))
+                        elif time_match:
+                            seconds.append(int(time_match.group(1)))
+                        elif poll_match:
+                            pass
+                        else:
+                            print('WARN: No match for data, "{}"'.format(msg))
+                    '''
+                    # These are a little harder because they're packed BLE characteristics.
+                    # Definitely worth pulling out but little more tedious.
+                    elif '(2A63)' in line:
+                        # Power
                         pass
-                    else:
-                        print('WARN: No match for data, "{}"'.format(msg))
-                '''
-                # These are a little harder because they're packed BLE characteristics.
-                # Definitely worth pulling out but little more tedious.
-                elif '(2A63)' in line:
-                    # Power
-                    pass
-                elif '(2A5B)' in line:
-                    # Cadence
-                    pass
-                '''
+                    elif '(2A5B)' in line:
+                        # Cadence
+                        pass
+                    '''
 
     # They different groups have to be same size, truncate.
     new_length = min(len(seconds), len(powers))
