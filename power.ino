@@ -19,7 +19,7 @@
 // calls overhead take about 20ms themselves E.g. at 50ms delay, 
 // that means a 50ms delay, plus 20ms to poll. So 70ms per loop, 
 // will get ~14 samples/second.
-#define LOOP_DELAY 50
+#define LOOP_DELAY 75
 
 // Min pause How often to crunch numbers and publish an update (millis)
 // NOTE If this value is less than the time it takes for one crank
@@ -127,7 +127,11 @@ void loop() {
       float mps = getCircularVelocity(avgDps);
 
       // That's all the ingredients, now we can find the power.
-      int16_t power = calcPower(mps, avgForce);
+      int16_t power = rollAvgPower(calcPower(mps, avgForce), 0.7f);
+      // Also bake in a rolling average for all records reported to
+      // the head unit. Will hopefully smooth out the power meter
+      // spiking about.
+      power = rollAvgPower(power, 0.7f);
 
 #ifdef DEBUG
   // Just print these values to the serial, something easy to read.
@@ -161,6 +165,19 @@ void loop() {
   }
 
   delay(LOOP_DELAY);
+}
+
+/**
+ * Rolling average for power reported to head unit.
+ * Pass the current reading and the float to weight it.
+ * Weight is the weight given to the current, previous will
+ * have 1.0-weight weight.
+ */
+int16_t rollAvgPower(int16_t current, float weight) {
+  static int16_t prevAvg = 0;  // Initially none
+  int16_t rollingAvg = (weight * current) + ((1.f - weight) * prevAvg);
+  prevAvg = rollingAvg;
+  return rollingAvg;
 }
 
 /**
