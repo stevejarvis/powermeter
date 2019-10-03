@@ -49,6 +49,7 @@ void gyroSetup() {
 
   // Two fewer than the calibration samples because we took out two outliers.
   float deltaZ = sumZ / (CALIBRATION_SAMPLES - 2);
+  deltaZ = -1 * deltaZ;
 #ifdef DEBUG
   Serial.printf("Discounting max (%d) and min (%d) samples.\n", maxSample, minSample);
   Serial.printf("Gyro calculated offset: %f\n", deltaZ); 
@@ -57,12 +58,11 @@ void gyroSetup() {
 
   // In lieu of being able to store results from a calibration mode...
 #ifndef CALIBRATE
-  // It's negated later...
-  float deltaZ = -15;
+  float deltaZ = GYRO_OFFSET;
 #endif // CALIBRATE
 
   // Set that calibration
-  gyro.setZGyroOffset(-1 * deltaZ);
+  gyro.setZGyroOffset(deltaZ);
 
   // Set zero motion detection
   gyro.setIntZeroMotionEnabled(true);

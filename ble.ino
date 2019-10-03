@@ -8,8 +8,6 @@
 
 #include <stdarg.h>
 
-#define DEV_NAME "JrvsPwr"
-
 // Service and character constants at:
 // https://github.com/adafruit/Adafruit_nRF52_Arduino/blob/bd0747473242d5d7c58ebc67ab0aa5098db56547/libraries/Bluefruit52Lib/src/BLEUuid.h
 /* Pwr Service Definitions
@@ -40,6 +38,9 @@ void bleSetup() {
   Bluefruit.setConnectCallback(connectCallback);
   Bluefruit.setDisconnectCallback(disconnectCallback);
 
+  // off Blue LED for lowest power consumption
+  Bluefruit.autoConnLed(false);
+
   // Configure and Start the Device Information Service
   bledis.setManufacturer("Adafruit Industries");
   bledis.setModel("Bluefruit Feather52");
@@ -47,8 +48,6 @@ void bleSetup() {
 
   // Start the BLE Battery Service
   blebas.begin();
-  // NOTE TODO right now this is never updated, it'll always read this value
-  blebas.write(90);
 
   // Setup the Heart Rate Monitor service using
   // BLEService and BLECharacteristic classes
@@ -70,7 +69,7 @@ void startAdv(void) {
   // Advertising packet
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   // Set max power. Accepted values are: -40, -30, -20, -16, -12, -8, -4, 0, 4
-  Bluefruit.setTxPower(-12);
+  Bluefruit.setTxPower(-8);
   Bluefruit.Advertising.addTxPower();
   Bluefruit.Advertising.addService(pwrService);
 #ifdef BLE_LOGGING
@@ -217,6 +216,9 @@ void blePublishPower(int16_t instantPwr, uint16_t crankRevs, long millisLast) {
   uint8_t pwrdata[8] = { flags[0], flags[1], pwr[0], pwr[1], cranks[0], cranks[1], lastTime[0], lastTime[1] };
   //uint8_t pwrdata[4] = { flags[0], flags[1], pwr[0], pwr[1] };
 
+  //Log.notice("BLE published flags: %X %X pwr: %X %X cranks: %X %X last time: %X %X\n", 
+  //           pwrdata[0], pwrdata[1], pwrdata[2], pwrdata[3], pwrdata[4], pwrdata[5], pwrdata[6], pwrdata[7]);
+
   if (pwrMeasChar.notify(pwrdata, sizeof(pwrdata))) {
 #ifdef DEBUG
     Serial.print("Power measurement updated to: ");
@@ -225,6 +227,13 @@ void blePublishPower(int16_t instantPwr, uint16_t crankRevs, long millisLast) {
     Serial.println("ERROR: Power notify not set in the CCCD or not connected!");
 #endif
   }
+}
+
+void blePublishBatt(uint8_t battPercent) {
+  blebas.write(battPercent);
+#ifdef DEBUG
+  Serial.printf("Updated battery percentage to %d", battPercent);
+#endif
 }
 
 /*

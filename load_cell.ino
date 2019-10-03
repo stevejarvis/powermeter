@@ -12,7 +12,7 @@
 // acceleration of gravity), 'x' is the raw reading of the load
 // cell, and 'b' is the tare offset. So this multiplier is the
 // scale needed to translate raw readings to units of Newtons.
-#define HX711_MULT  -2719.66716169
+// (defined in main file)
 
 // Call tare to average this many readings to get going.
 // NOTE: 30 takes kind of long, like > 1 second, but it definitely
@@ -42,7 +42,7 @@ void loadSetup() {
 #ifndef CALIBRATE
   // In lieu of a calibration mode and way to save it, manually.
   // This zeros, or tares.
-  float offset = -42495.f;
+  float offset = LOAD_OFFSET;  // Steve Merckx
   load.set_offset(offset);
 #endif // CALIBRATE
   
@@ -67,7 +67,7 @@ void showConfigs(void) {
  * rolling average, in Newtons.
  */
 double getAvgForce(const double & lastAvg) {
-  const static double WEIGHT = 0.90;
+  const static double WEIGHT = 0.80;
   static double currentData = 0;
 
   currentData = load.get_units(NUM_RAW_SAMPLES) * HOOKEDUPLOADBACKWARDS;
