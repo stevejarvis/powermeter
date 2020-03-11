@@ -24,19 +24,17 @@ Now you data heads out there might point out that the average power is not all t
 matters, and you're right. I also tracked the variance in readings throughout 
 rides, and this meter is "spikier" than commercial meters. I believe commercial meters
 apply extra smoothing to the data (this code does very little, and only done in
-software versus hardware). But maybe more importantly, commercial meters account 
-for the position in the rotation when the reading is taken. For example, if the 
-meter takes a reading during the heat of the downstroke in one revolution, and in the 
-next takes a reading at the apex, that's going to result in very spiky power over time, 
-when in reality it's a consistent effort. This project handles this issue in 
-software, by calculating the time for a single revolution, and timing the readings 
-such that they occur at as nearly the same positions in the pedal stroke each 
-revolution. This change caused a huge improvement in short term (<5 second) 
-consistency on power reporting. The hardware includes a gyroscope, which could 
-be used to dial this in better still.
+software versus hardware). But maybe more importantly, commercial meters do an
+exceptional job accounting for the position in the rotation when the reading is taken. 
+For example, if the meter takes a reading during the heat of the downstroke in 
+one revolution, and in the next takes a reading at the apex, that's going to result 
+in very spiky power over time, when in reality it's a consistent effort. This project 
+handles this issue in software, by calculating the time for a single revolution, 
+and timing the readings such that they occur at as nearly the same positions in 
+the pedal stroke each revolution. This change caused a huge improvement in short 
+term (<5 second) consistency on power reporting. The hardware includes a gyroscope, 
+which could be used to dial this in better still.
 
 The license is GPL, because perhaps my most important take away is this stuff 
 isn't rocket science and there's no reason these meters cost as much as the rest 
-of the bike. Ya, this isn't quite as precise, consistent, or accurate as 
-an expensive commercial meter, but it's pretty darn ok and costs about $70 in 
-parts.
+of the bike.
