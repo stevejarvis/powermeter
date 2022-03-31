@@ -4,7 +4,7 @@ See a writeup here: https://imateapot.dev/homemade-power-meter/
 
 This is the complete code for a crank-based power meter, transmitting over BLE
 to a bike computer. Schematics and a hardware parts list for the hardware, as well as 
-notes on calibrating, are on [the wiki](https://gitlab.com/sjarvis/powermeter/-/wikis/home).
+notes on calibrating, are on [the wiki](https://github.com/stevejarvis/powermeter/wiki).
 In all, it's a full instruction set for building your own cycling power meter,
 compatible with any bike computer that supports Bluetooth (i.e. any Wahoo
 or Garmin).
